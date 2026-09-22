@@ -8,13 +8,9 @@ class AnalyticsExecutor:
         working_df=df.copy()
 
         #Applying filters
-        for filter_condition in plan.filters:
-            working_df=self._apply_filter(
-                working_df,
-                filter_condition.column,
-                filter_condition.operator,
-                filter_condition.value
-            )
+        
+        working_df=self._apply_filters(working_df,plan)
+        working_df=self._apply_time_range(working_df,plan)
 
         if working_df.empty:
             return pd.DataFrame()
@@ -22,20 +18,13 @@ class AnalyticsExecutor:
         #Aggregate
         result=self._aggregate(working_df,plan)
 
-        #Sort
-        if plan.order_by:
-            if plan.order_by not in result.columns:
-                raise ValueError(
-                    f"Cannot order by '{plan.order_by}'."
-                    f"Available columns: {list(result.columns)}" 
-                )     
-            result=result.sort_values(
-                by=plan.order_by,
-                ascending=plan.order_ascending=="asc"
-            )
-        #Limit
-        if plan.limit is not None:
-            result=result.head(plan.limit)
+        #Derived metric
+        if plan.derived_metric:
+            result=self._apply_derived_metric(result,plan)          
+            
+        #Ranking
+        if plan.ranking:
+            result=result._apply_ranking(result,plan)
         return result.reset_index(drop=True)
 
     @staticmethod
@@ -43,7 +32,6 @@ class AnalyticsExecutor:
         if plan.metric not in df.columns:
             raise ValueError(
                 f"Unknown metric '{plan.metric}'."
-                f"Available columns: {list(df.columns)}"
             )
 
         if plan.group_by:
@@ -97,4 +85,64 @@ class AnalyticsExecutor:
             {
                 f"{plan.aggregation}_{plan.metric}":[value]
             }
-        )                                       
+        )
+    @staticmethod
+    def _apply_filters(df:pd.DataFrame,plan:QueryPlan)->pf.DataFrame:
+        for condition in plan.filters:
+            if condition.column not in df.columns:
+                raise ValueError(
+                    f"Unknown filter column:"
+                    f"'{condition.column}'"
+                )
+            series=df[condition.column]
+            operator=condition.operator
+            value=condition.value
+
+            if operator=="==":
+                df=df[series==value]
+            elif operator=="!=":
+                df=df[series!=value]
+            elif operator==">":
+                df=df[series>value]
+            elif operator==">=":
+                df=df[series>=value]
+            elif operator=="<":
+                df=df[series<value]
+            elif operator=="<=":
+                df=df[series<=value]
+            elif operator=="in":
+                df=df[series.isin(value)]
+            elif operator=="contains":
+                df=df[series.astype(str).contains(str(value),case=False,na=False)]          
+            else:
+                raise ValueError(
+                    f"Unsupported filter operator: "
+                    f"{operator}"
+                )
+        return df
+    @staticmethod
+    def _apply_time_range(df:pd.DataFrame,plan:QueryPlan)->pd.DataFrame:
+        if not plan.time_range:
+            return df 
+        time_column=plan.time_range.column
+        if time_column not in df.columns:
+            raise ValueError(
+                f"Unknown time column: '{time_column}'"
+            ) 
+        df=df.copy()
+        df[time_column]=pd.to_datetime(
+            df[time_column],
+            errors="coerce"
+        )                  
+        if plan.time_range.start:
+            df=df[df[time_column]>=pd.to_datetime(plan.time_range.start)]
+        if plan.time_range.end:
+            df=df[df[time_column]<=pd.to_datetime(plan.time_range.end)]
+        return df 
+    @staticmethod
+    def _apply_derived_metric(result: pd.DataFrame, plan:QueryPlan)->pd.DataFrame:
+        return result
+    @staticmethod
+    def _apply_ranking(result:pd.DataFrame,plan:QueryPlan)->pd.DataFrame:
+        return result
+
