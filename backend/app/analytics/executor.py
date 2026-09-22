@@ -175,24 +175,32 @@ class AnalyticsExecutor:
                 raise ValueError(
                     "Ratio requires numerator and denominator."
                 )
+            if derived.numerator not in result.columns:
+                raise ValueError(
+                    f"Unknown numerator column: '{derived.numerator}'"
+                )
             if derived.denominator not in result.columns:
                 raise ValueError(
                     f"Unknown denominator column: '{derived.denominator}'"
                 )
             result[derived.name]=(
-                result[derived.numerator]/result[derived.denominator]
+                result[derived.numerator]/result[derived.denominator].replace(0,pd.NA)
             )
         elif derived.operation=="percentage":
             if not derived.numerator or not derived.denominator:
                 raise ValueError(
                     "Percentage requires numerator and denominator"
                 )
+            if derived.numerator not in result.columns:
+                raise ValueError(
+                    f"Unknown numerator column: '{derived.numerator}'"
+                )
             if derived.denominator not in result.columns:
                 raise ValueError(
                     f"Unknown denominator column: '{derived.denominator}'"
                 )    
             result[derived.name]=(
-                result[derived.numerator]/result[derived.denominator]
+                result[derived.numerator]/result[derived.denominator].replace(0,pd.NA)
             )*100
 
         elif derived.operation=="difference":
@@ -200,14 +208,30 @@ class AnalyticsExecutor:
                 raise ValueError(
                     "Difference requires current_metric and previous_metric."
                 )
+            if derived.current_metric not in result.columns:
+                raise ValueError(
+                    f"Unknown current metric: '{derived.current_metric}'"
+                )
+            if derived.previous_metric not in result.columns:
+                raise ValueError(
+                    f"Unknown previous metric: '{derived.previous_metric}'"
+                )
             result[derived.name]=(result[derived.current_metric]-result[derived.previous_metric])
         elif derived.operation=="growth":
             if not derived.current_metric or not derived.previous_metric:
                 raise ValueError(
                     "Growth requires current_metric and previous_metric."
                 )
+            if derived.current_metric not in result.columns:
+                raise ValueError(
+                    f"Unknown current metric: '{derived.current_metric}'"
+                )
+            if derived.previous_metric not in result.columns:
+                raise ValueError(
+                    f"Unknown previous metric: '{derived.previous_metric}'"
+                )
             result[derived.name]=(
-                (result[derived.current_metric]-result[derived.previous_metric])/result[derived.previous_metric]
+                (result[derived.current_metric]-result[derived.previous_metric])/result[derived.previous_metric].replace(0,pd.NA)
             )*100
         else:
             raise ValueError(
