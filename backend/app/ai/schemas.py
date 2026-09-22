@@ -1,18 +1,22 @@
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
+class Metric(BaseModel):
+    name:str
+    aggregation: Literal["sum","mean","count","count_distinct","min","max"]
+
 class Filter(BaseModel):
     column:str
     operator: Literal["==","!=",">",">=","<","<=","in","contains"]
     value: Any
 
- class Ranking(BaseModel):
+class Ranking(BaseModel):
     metric: str
     direction: Literal["asc","desc"]="desc"
     limit: int | None =None
     partition_by: list[str]=Field(default_factory=list)
 
- class TimeRange(BaseModel):
+class TimeRange(BaseModel):
     column:str
     start: str|None=None
     end:str|None=None
@@ -35,8 +39,7 @@ class Comparison(BaseModel):
 class QueryPlan(BaseModel):
     """Structured representation of an analytical query."""
 
-    metric:str
-    aggregation:Literal["sum","mean","count","count_distinct","min","max"]
+    metrics:list[Metric]=Field(default_factory=list)
     group_by: list[str]=Field(default_factory=list)
     filters:list[Filter]=Field(default_factory=list)
     ranking: Ranking|None=None

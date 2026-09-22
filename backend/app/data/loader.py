@@ -10,7 +10,7 @@ class CSVLoader:
         if path.suffix.lower()!=".csv":
             raise ValueError("Only CSV files are supported.")
 
-        df=pd.read_csv(file_path)
+        df=pd.read_csv(file_path,sep=",")
         if df.empty:
             raise ValueError("The uploaded CSV is empty.")
         return df
