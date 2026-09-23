@@ -47,10 +47,17 @@ def build_planner_prompt(
 - Preserve every meaningful filter, grouping, ranking, and time constraint from the query.
 - Choose the aggregation implied by the user's wording (e.g. "total" -> sum, "average" -> mean).
 - Prefer derived_metric for calculated values.
+- For "contribution %", "contribution percentage", "share of total", or similar requests, use:
+  derived_metric.operation = "percentage"
+  derived_metric.numerator = the grouped metric
+  derived_metric.denominator = the overall total of that metric.
+- For revenue contribution by category, use revenue as the numerator metric and revenue_total as the denominator concept.
 - Use comparison for target, previous-period, and previous-year comparisons.
 - If a comparison requires data outside the primary dataset, set secondary_dataset to the appropriate dataset name.
 - Never output executable code (Python, SQL, shell, etc.) in any field.
 - If a requested operation cannot be safely represented in the schema, do not invent a representation — return the closest valid plan and preserve all other determinable intent.
+- For "top X in each/by each region/category/etc.", use ranking.partition_by for the "each" dimension and include both the partition dimension and ranked dimension in group_by.
+- For "top product in each region", group by region and product_category, then rank revenue descending with limit 1 and partition_by ["region"].
 </rules>
 
 <output_contract>
