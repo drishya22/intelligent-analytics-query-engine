@@ -4,18 +4,23 @@ import pandas as pd
 from fastapi import (
     APIRouter,
     File,
-    UploadFile,
-    HTTPException,
     Form,
+    HTTPException,
+    Request,
+    UploadFile,
 )
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from app.api.limiter import limiter
 
 from app.ai.planner import LLMQueryPlanner, QueryPlanner
 from app.ai.providers import GeminiProvider, OpenRouterProvider
 from app.analytics.executor import AnalyticsExecutor
+from app.confidence.explanation import explain_plan
+from app.confidence.scorer import ConfidenceScorer
 from app.data.loader import CSVLoader
 from app.data.registry import SemanticRegistry
-from app.confidence.scorer import ConfidenceScorer
-from app.confidence.explanation import explain_plan
+from app.feedback.logger import FeedbackLogger
 
 
 router = APIRouter(
@@ -23,21 +28,26 @@ router = APIRouter(
     tags=["analytics"],
 )
 
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri="redis://localhost:6379/0",
+)
+
 
 @router.post("/query")
+@limiter.limit("30/minute")
 async def execute_query(
+    request: Request,
     query: str = Form(...),
     file: UploadFile | None = File(default=None),
 ):
     try:
-        # ---------------------------------------------------------
-        # 1. Load dataset
-        # ---------------------------------------------------------
 
         loader = CSVLoader()
 
         if file is not None:
             df = pd.read_csv(file.file)
+
         else:
             dataset_path = (
                 Path(__file__).resolve().parents[3]
@@ -46,10 +56,6 @@ async def execute_query(
             )
 
             df = loader.load(dataset_path)
-
-        # ---------------------------------------------------------
-        # 2. Load semantic registry
-        # ---------------------------------------------------------
 
         registry_path = (
             Path(__file__).resolve().parents[3]
@@ -61,19 +67,12 @@ async def execute_query(
             registry_path
         )
 
-        # ---------------------------------------------------------
-        # 3. PLAN QUERY
-        #
-        # Primary: Gemini
-        # Fallback: OpenRouter
-        # Final fallback: deterministic planner
-        # ---------------------------------------------------------
-
         plan = None
         planner_source = None
 
-        # ---------- Primary: Gemini ----------
+        # Primary provider: Gemini
         try:
+
             provider = GeminiProvider()
 
             planner = LLMQueryPlanner(
@@ -86,8 +85,10 @@ async def execute_query(
             planner_source = "gemini"
 
         except Exception:
-            # ---------- Fallback: OpenRouter ----------
+
+            # Fallback provider: OpenRouter
             try:
+
                 provider = OpenRouterProvider()
 
                 planner = LLMQueryPlanner(
@@ -100,20 +101,17 @@ async def execute_query(
                 planner_source = "openrouter"
 
             except Exception:
-                # ---------- Final fallback: deterministic ----------
+
+                # Final fallback: deterministic planner
                 planner = QueryPlanner(
-                    registry=registry,
+                    registry=registry
                 )
 
                 plan = planner.plan(query)
                 planner_source = "deterministic"
 
-        # ---------------------------------------------------------
-        # 4. Execute analytical plan
-        # ---------------------------------------------------------
-
         executor = AnalyticsExecutor(
-            registry=registry,
+            registry=registry
         )
 
         result = executor.execute(
@@ -121,24 +119,12 @@ async def execute_query(
             plan=plan,
         )
 
-        # ---------------------------------------------------------
-        # 5. Confidence
-        # ---------------------------------------------------------
-
         confidence = ConfidenceScorer().score(
             plan=plan,
             registry=registry,
         )
 
-        # ---------------------------------------------------------
-        # 6. Explanation
-        # ---------------------------------------------------------
-
         explanation = explain_plan(plan)
-
-        # ---------------------------------------------------------
-        # 7. JSON response
-        # ---------------------------------------------------------
 
         return {
             "query": query,
@@ -152,6 +138,36 @@ async def execute_query(
         }
 
     except Exception as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+
+@router.post("/feedback")
+@limiter.limit("60/minute")
+async def submit_feedback(
+    request: Request,
+    query: str = Form(...),
+    result: str = Form(...),
+    feedback: str = Form(...),
+):
+    try:
+
+        FeedbackLogger().log(
+            query=query,
+            result=result,
+            feedback=feedback,
+        )
+
+        return {
+            "status": "success",
+            "message": "Feedback recorded.",
+        }
+
+    except Exception as exc:
+
         raise HTTPException(
             status_code=400,
             detail=str(exc),

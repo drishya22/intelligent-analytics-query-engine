@@ -102,21 +102,31 @@ quantity × unit_price × (1 - discount)
 
 This semantic layer allows users to use business terminology without requiring knowledge of the underlying dataset schema.
 
-### LLM Provider Fallback
+### API Rate Limiting
 
-The query planner uses a provider fallback chain:
+The API uses Redis-backed rate limiting through SlowAPI to protect query and feedback endpoints from excessive requests.
 
-```text
-Gemini
+Default limits:
+
+- Query endpoint: 30 requests/minute
+- Feedback endpoint: 60 requests/minute
+
+The rate limiter uses the client's remote address as its key.
+
+````text
+Client
    |
-   | failure
    v
-OpenRouter
+FastAPI
    |
-   | failure
    v
-Deterministic Planner
-```
+SlowAPI Rate Limiter
+   |
+   v
+Redis
+   |
+   v
+Analytics Query Engine
 
 This allows the system to continue processing supported queries when an LLM provider is temporarily unavailable.
 
@@ -166,7 +176,7 @@ Example:
     }
   ]
 }
-```
+````
 
 ### Feedback Loop
 
@@ -380,6 +390,12 @@ The interface sends natural-language queries to the backend and displays:
 - OpenRouter
 - Structured QueryPlan generation
 
+### Infrastructure
+
+- Redis
+- SlowAPI
+- Rate limiting
+
 ### Frontend
 
 - HTML
@@ -484,7 +500,7 @@ OPENROUTER_API_KEY=
 
 The architecture is designed to support additional capabilities such as:
 
-- Redis + Celery for asynchronous query execution
+- Celery workers for asynchronous query execution
 - Persistent query history
 - Feedback-driven planner improvement
 - More advanced temporal expressions
@@ -522,7 +538,9 @@ The implementation focuses on converting natural-language analytics questions in
 ## Author
 
 **Drishya Garg**
-23f3001900
-BS in Data Science And Applications
 
-IIT Madras BS in Data Science and Programming
+#### 23f3001900
+
+#### BS in Data Science And Applications
+
+#### IIT Madras BS in Data Science and Programming
