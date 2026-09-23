@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Analytics Query Engine</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <header>
+        <div>
+            <div class="eyebrow">AI ANALYTICS ENGINE</div>
+            <h1>Intelligent Analytics<br>Query Engine</h1>
+            <p class="subtitle">
+                Ask business questions in natural language and get
+                executable analytical results.
+            </p>
+        </div>
+        <div class="status">
+            <span></span> API Ready
+        </div>
+    </header>
+
+    <section class="query-card">
+
+        <label for="query">Ask an analytics question</label>
+
+        <textarea
+            id="query"
+            placeholder="e.g. What are the top 2 cities by profit?"
+        ></textarea>
+
+        <div class="examples">
+            <button onclick="setQuery('What are the top 2 cities by profit?')">
+                Top cities by profit
+            </button>
+
+            <button onclick="setQuery('Total sales in India for March')">
+                Sales in India
+            </button>
+
+            <button onclick="setQuery('What is the average order value by region?')">
+                AOV by region
+            </button>
+        </div>
+
+        <button class="run-button" onclick="runQuery()">
+            Run Analytics Query →
+        </button>
+
+        <div id="loading" class="loading hidden">
+            Processing query...
+        </div>
+
+        <div id="error" class="error hidden"></div>
+
+    </section>
+
+    <section id="results" class="results hidden">
+
+        <div class="metrics">
+
+            <div class="metric-card">
+                <span>CONFIDENCE</span>
+                <strong id="confidence">—</strong>
+            </div>
+
+            <div class="metric-card">
+                <span>PLANNER</span>
+                <strong id="planner">—</strong>
+            </div>
+
+            <div class="metric-card">
+                <span>ROWS</span>
+                <strong id="rowCount">—</strong>
+            </div>
+
+        </div>
+
+        <div class="panel">
+            <h2>Explanation</h2>
+            <p id="explanation"></p>
+        </div>
+
+        <div class="panel">
+            <h2>Query Plan</h2>
+            <pre id="plan"></pre>
+        </div>
+
+        <div class="panel">
+            <h2>Results</h2>
+            <div id="table"></div>
+        </div>
+
+    </section>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+</html>
