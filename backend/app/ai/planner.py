@@ -6,6 +6,7 @@ from app.ai.schemas import (
     Filter
 )
 from app.data.registry import SemanticRegistry
+from app.ai.prompts import build_planner_prompt
 
 class QueryPlanner:
     """Convert a natural language query into a validated structured QueryPlan.
@@ -291,4 +292,30 @@ class QueryPlanner:
         return re.search(
             pattern,
             query.lower(),
-        ) is not None           
+        ) is not None 
+
+              
+class LLMQueryPlanner:
+    """Convert natural language into a validated QueryPlan using an LLM"""
+    def __init__(self,provider,registry:SemanticRegistry,dataset_columns:list[str]):
+        self.provider=provider
+        self.registry=registry
+        self.dataset_columns=dataset_columns
+
+    def plan(self,query:str)->QueryPlan:
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty.")
+        prompt=build_planner_prompt(
+            query=query,
+            registry=self.registry,
+            dataset_columns=self.dataset_columns
+        )    
+
+        response=self.provider.generate(prompt)
+        response=response.strip()
+        if response.startswith("```"):
+            response=response.replace("```json","",1)
+            response=response.replace("```","",1)
+            response=response.strip()
+        return  QueryPlan.model_validate_json(response)
+        
