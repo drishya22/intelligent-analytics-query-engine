@@ -1,6 +1,6 @@
 import pandas as pd
 
-from app.ai.schemas import QueryPlan
+from app.ai.schemas import QueryPlan, Metric
 from app.analytics.validator import QueryValidator
 from app.analytics.operations import (
     prepare_dataframe,
@@ -21,7 +21,6 @@ class AnalyticsExecutor:
         plan: QueryPlan,
     ) -> pd.DataFrame:
 
-        # Materialize semantic metrics such as revenue.
         working_df = prepare_dataframe(
             df=df,
             metric_names=[
@@ -31,8 +30,6 @@ class AnalyticsExecutor:
             registry=self.registry,
         )
 
-        # Validate the plan against both physical
-        # and semantic metrics.
         validator = QueryValidator()
 
         validator.validate(
@@ -41,35 +38,39 @@ class AnalyticsExecutor:
             registry=self.registry,
         )
 
-        # Apply filters.
         working_df = self._apply_filters(
             working_df,
             plan,
         )
 
-        # Apply time constraints.
         working_df = self._apply_time_range(
             working_df,
-            plan,
+            plan.time_range,
         )
 
         if working_df.empty:
             return pd.DataFrame()
 
-        # Aggregate requested metrics.
         result = self._aggregate(
             working_df,
             plan,
+            self.registry,
         )
 
-        # Apply derived calculations.
         if plan.derived_metric:
             result = self._apply_derived_metric(
                 result,
                 plan,
             )
 
-        # Apply ranking / top-N / bottom-N.
+        if plan.comparison:
+            result = self._apply_comparison(
+                df=working_df,
+                result=result,
+                plan=plan,
+                registry=self.registry,
+            )
+
         if plan.ranking:
             result = self._apply_ranking(
                 result,
@@ -78,10 +79,11 @@ class AnalyticsExecutor:
 
         return result.reset_index(drop=True)
 
+    @staticmethod
     def _aggregate(
-        self,
         df: pd.DataFrame,
         plan: QueryPlan,
+        registry: SemanticRegistry,
     ) -> pd.DataFrame:
 
         if not plan.metrics:
@@ -89,15 +91,58 @@ class AnalyticsExecutor:
                 "At least one metric is required."
             )
 
+        if any(
+            metric.name == "avg_order_value"
+            for metric in plan.metrics
+        ):
+            if "revenue" not in df.columns:
+                raise ValueError(
+                    "Revenue is required for average order value."
+                )
+
+            if "order_id" not in df.columns:
+                raise ValueError(
+                    "order_id is required for average order value."
+                )
+
+            if plan.group_by:
+                grouped_revenue = df.groupby(
+                    plan.group_by,
+                    dropna=False,
+                )["revenue"].sum()
+
+                grouped_orders = df.groupby(
+                    plan.group_by,
+                    dropna=False,
+                )["order_id"].count()
+
+                aov = (
+                    grouped_revenue
+                    / grouped_orders.replace(0, pd.NA)
+                )
+
+                return aov.reset_index(
+                    name="avg_order_value"
+                )
+
+            revenue = df["revenue"].sum()
+            orders = df["order_id"].count()
+
+            return pd.DataFrame(
+                {
+                    "avg_order_value": [
+                        revenue / orders if orders else 0
+                    ]
+                }
+            )
+
         results = []
 
         for metric in plan.metrics:
 
-            # Resolve semantic metric into the actual
-            # dataframe column + aggregation.
             physical_column, aggregation = resolve_metric(
                 metric,
-                self.registry,
+                registry,
             )
 
             if physical_column not in df.columns:
@@ -190,11 +235,9 @@ class AnalyticsExecutor:
 
             results.append(result)
 
-        # Only one metric.
         if len(results) == 1:
             return results[0]
 
-        # Multiple metrics.
         final_result = results[0]
 
         for result in results[1:]:
@@ -263,26 +306,38 @@ class AnalyticsExecutor:
         return df
 
     @staticmethod
-    def _apply_time_range(df: pd.DataFrame,time_range) -> pd.DataFrame:
+    def _apply_time_range(
+        df: pd.DataFrame,
+        time_range,
+    ) -> pd.DataFrame:
+
         if time_range is None:
             return df
 
         column = time_range.column
 
         if column not in df.columns:
-            raise ValueError(f"Unknown time column: {column}")
+            raise ValueError(
+                f"Unknown time column: {column}"
+            )
 
         result = df.copy()
-        result[column] = pd.to_datetime(result[column])
+        result[column] = pd.to_datetime(
+            result[column]
+        )
 
-        # Handle explicit start/end ranges
         if time_range.start is not None:
-            result = result[result[column] >= pd.to_datetime(time_range.start)]
+            result = result[
+                result[column]
+                >= pd.to_datetime(time_range.start)
+            ]
 
         if time_range.end is not None:
-            result = result[result[column] <= pd.to_datetime(time_range.end)]
+            result = result[
+                result[column]
+                <= pd.to_datetime(time_range.end)
+            ]
 
-        # Handle month names such as "March"
         if time_range.period:
             period = time_range.period.strip().lower()
 
@@ -302,21 +357,31 @@ class AnalyticsExecutor:
             }
 
             if period in month_map:
-                result = result[result[column].dt.month == month_map[period]]
+                result = result[
+                    result[column].dt.month
+                    == month_map[period]
+                ]
+
             else:
-                # Handle values such as "2024-03"
                 try:
-                    parsed_period = pd.Period(period, freq="M")
+                    parsed_period = pd.Period(
+                        period,
+                        freq="M",
+                    )
+
                     result = result[
-                        result[column].dt.to_period("M") == parsed_period
+                        result[column].dt.to_period("M")
+                        == parsed_period
                     ]
+
                 except Exception:
                     raise ValueError(
-                        f"Unsupported time period: {time_range.period}"
+                        f"Unsupported time period: "
+                        f"{time_range.period}"
                     )
 
         return result
-    
+
     @staticmethod
     def _apply_derived_metric(
         result: pd.DataFrame,
@@ -464,6 +529,149 @@ class AnalyticsExecutor:
         return result
 
     @staticmethod
+    def _apply_comparison(
+        df: pd.DataFrame,
+        result: pd.DataFrame,
+        plan: QueryPlan,
+        registry: SemanticRegistry,
+    ) -> pd.DataFrame:
+
+        comparison = plan.comparison
+
+        if comparison is None:
+            return result
+
+        if comparison.type == "target":
+            raise ValueError(
+                "Target comparison requires the targets dataset, "
+                "which is not currently loaded."
+            )
+
+        if comparison.type == "previous_year":
+
+            if "order_date" not in df.columns:
+                raise ValueError(
+                    "order_date is required for "
+                    "year-over-year comparison."
+                )
+
+            dates = pd.to_datetime(
+                df["order_date"]
+            )
+
+            current_year = dates.dt.year.max()
+
+            current_df = df[
+                dates.dt.year == current_year
+            ]
+
+            previous_df = df[
+                dates.dt.year == current_year - 1
+            ]
+
+            metric_name = comparison.metric
+
+            current_plan = QueryPlan(
+                metrics=[
+                    Metric(
+                        name=metric_name,
+                        aggregation="sum",
+                    )
+                ],
+                group_by=plan.group_by,
+            )
+
+            current_result = AnalyticsExecutor._aggregate(
+                current_df,
+                current_plan,
+                registry,
+            )
+
+            previous_result = AnalyticsExecutor._aggregate(
+                previous_df,
+                current_plan,
+                registry,
+            )
+
+            value_column = f"sum_{metric_name}"
+
+            if value_column not in current_result.columns:
+                raise ValueError(
+                    f"Could not calculate comparison "
+                    f"for {metric_name}."
+                )
+
+            if plan.group_by:
+
+                merged = current_result.merge(
+                    previous_result,
+                    on=plan.group_by,
+                    how="outer",
+                    suffixes=(
+                        "_current",
+                        "_previous",
+                    ),
+                )
+
+                current_column = (
+                    f"{value_column}_current"
+                )
+
+                previous_column = (
+                    f"{value_column}_previous"
+                )
+
+                merged["yoy_growth"] = (
+                    (
+                        merged[current_column]
+                        - merged[previous_column]
+                    )
+                    / merged[previous_column].replace(
+                        0,
+                        pd.NA,
+                    )
+                ) * 100
+
+                return merged
+
+            current_value = (
+                current_result[value_column].iloc[0]
+            )
+
+            previous_value = (
+                previous_result[value_column].iloc[0]
+            )
+
+            yoy_growth = (
+                (
+                    current_value
+                    - previous_value
+                )
+                / previous_value
+                * 100
+                if previous_value != 0
+                else None
+            )
+
+            return pd.DataFrame(
+                {
+                    "current": [current_value],
+                    "previous": [previous_value],
+                    "yoy_growth": [yoy_growth],
+                }
+            )
+
+        if comparison.type == "previous_period":
+            raise ValueError(
+                "Previous-period comparison is not yet supported."
+            )
+
+        raise ValueError(
+            f"Unsupported comparison type: "
+            f"{comparison.type}"
+        )
+
+    @staticmethod
     def _apply_ranking(
         result: pd.DataFrame,
         plan: QueryPlan,
@@ -489,7 +697,6 @@ class AnalyticsExecutor:
 
         metric_column = metric_columns[0]
 
-        # Global ranking.
         if not ranking.partition_by:
 
             result = result.sort_values(
@@ -506,7 +713,6 @@ class AnalyticsExecutor:
 
             return result
 
-        # Partitioned ranking.
         missing = [
             column
             for column in ranking.partition_by
