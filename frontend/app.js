@@ -7,6 +7,7 @@ function setQuery(query) {
 async function runQuery() {
 
     const query = document.getElementById("query").value.trim();
+    const fileInput = document.getElementById("csvFile");
 
     if (!query) {
         showError("Please enter an analytics question.");
@@ -24,7 +25,12 @@ async function runQuery() {
     try {
 
         const formData = new FormData();
+
         formData.append("query", query);
+
+        if (fileInput.files.length > 0) {
+            formData.append("file", fileInput.files[0]);
+        }
 
         const response = await fetch(API_URL, {
             method: "POST",
@@ -34,21 +40,28 @@ async function runQuery() {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.detail || "Query failed.");
+            throw new Error(
+                data.detail || "Query failed."
+            );
         }
 
         renderResults(data);
 
     } catch (err) {
+
         showError(err.message);
+
     } finally {
+
         loading.classList.add("hidden");
     }
 }
 
 function renderResults(data) {
 
-    document.getElementById("results").classList.remove("hidden");
+    document
+        .getElementById("results")
+        .classList.remove("hidden");
 
     document.getElementById("confidence").textContent =
         Number(data.confidence).toFixed(2);

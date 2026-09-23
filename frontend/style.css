@@ -118,7 +118,36 @@ textarea:focus {
 .examples button:hover {
     background: #222936;
 }
+.upload-section {
+    margin-top: 22px;
+    padding: 18px;
+    border: 1px dashed #303744;
+    border-radius: 12px;
+    background: #0d1016;
+}
 
+.upload-section label {
+    margin-bottom: 10px;
+}
+
+.upload-section label span {
+    color: #788394;
+    font-weight: 400;
+}
+
+.upload-section input[type="file"] {
+    width: 100%;
+    color: #aeb7c5;
+    font-size: 14px;
+    padding: 8px 0;
+}
+
+.upload-section small {
+    display: block;
+    color: #788394;
+    margin-top: 8px;
+    line-height: 1.4;
+}
 .run-button {
     width: 100%;
     margin-top: 10px;

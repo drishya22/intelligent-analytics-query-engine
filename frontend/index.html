@@ -20,6 +20,7 @@
                 executable analytical results.
             </p>
         </div>
+
         <div class="status">
             <span></span> API Ready
         </div>
@@ -46,6 +47,20 @@
             <button onclick="setQuery('What is the average order value by region?')">
                 AOV by region
             </button>
+        </div>
+
+        <div class="upload-section">
+            <label for="csvFile">Upload dataset <span>(optional)</span></label>
+
+            <input
+                id="csvFile"
+                type="file"
+                accept=".csv,text/csv"
+            />
+
+            <small>
+                Upload a CSV to analyze it, or leave empty to use the default dataset.
+            </small>
         </div>
 
         <button class="run-button" onclick="runQuery()">
